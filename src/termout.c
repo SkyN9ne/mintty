@@ -2269,6 +2269,12 @@ set_modes(bool state)
           }
         when 1061:       /* VT220 keyboard emulation */
           term.vt220_keys = state;
+        when 2001:       /* Readline mouse button-1 */
+          term.readline_mouse_1 = state;
+        when 2002:       /* Readline mouse button-2 */
+          term.readline_mouse_2 = state;
+        when 2003:       /* Readline mouse button-3 */
+          term.readline_mouse_3 = state;
         when 2004:       /* xterm bracketed paste mode */
           term.bracketed_paste = state;
 
@@ -4263,7 +4269,8 @@ do_cmd(void)
       else
         cs_set_locale(s);
     when 7721:  // Copy window title to clipboard.
-      win_copy_title();
+      if (cfg.allow_set_selection)
+        win_copy_title();
     when 7704:  // Change ANSI foreground/background colours.
       do_ansi_colour_osc();
     when 7773: {  // Change icon.

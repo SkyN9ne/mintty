@@ -333,6 +333,25 @@ Application mousewheel mode is controlled by these sequences:
 | `^[[?7787h`   | application   |
 
 
+## Readline mouse modes ##
+
+These three mode settings, switched by DECSET/DECRST sequences (xterm 379) 
+enable mouse-controlled editing on the command line (as detected by the 
+cursor position) by sending virtual cursor or erase keystrokes.
+
+| **sequence**  | **mode**                                                  |
+|:--------------|:----------------------------------------------------------|
+| `^[[?2001h`   | left button places cursor on command line                 |
+| `^[[?2002h`   | middle button pastes at current mouse position            |
+| `^[[?2003h`   | double right-click deletes selection until mouse position |
+
+Note that middle and right button functions only apply if the middle button 
+is configured to Paste (default) and the right button is configured to 
+Extend the selection, respectively.
+The respective DECRST sequences (ending with `l`) disable the corresponding mode.
+These modes can be preset with option `ClicksPlaceCursor` initially and on hard reset.
+
+
 ## Ambiguous width reporting ##
 
 Applications can ask to be notified when the width of the so-called [ambiguous width](http://unicode.org/reports/tr11/#Ambiguous) character category changes due to the user changing font.
@@ -387,7 +406,7 @@ source of information about which Indic characters should be considered wide;
 most screen applications will not cooperate with this feature as their 
 assumption of character widths is mostly based on the system locale 
 (with the notable exception of the Unicode editor MinEd which supports 
-Indic wide display in its forthcoming release).
+Indic wide display).
 
 Setting wide long Unicode characters mode, a number of Unicode characters 
 that are supposed to be "wide" or "long" will be displayed 
@@ -522,8 +541,9 @@ to be declared in your shell profile (e.g. `$HOME/.bashrc`).
 
 The following _OSC_ ("operating system command") sequence can be used to copy 
 the window title to the Windows clipboard (like menu function "Copy Title"):
+This sequence is disabled by default setting `AllowSetSelection=no`.
 
-> `^[]7721;1^G`
+> `^[]7721^G`
 
 
 ## Window title set ##
@@ -708,7 +728,7 @@ Tones 1 to 5 are currently defined, 1 is a sine waveform.
 The initial tone style can be preselected by setting `PlayTone`; 
 if changed by a sequence, it will be restored by a terminal reset.
 Tone value 0 (also the fallback) resorts to the Windows Beep function.
-Other tones are only effective if the audio output library \fIlibao\fP 
+Other tones are only effective if the audio output library `libao` 
 is installed.
 
 

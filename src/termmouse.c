@@ -29,9 +29,42 @@ sel_spread_word(pos p, bool forward)
 {
   pos ret_p = p;
   termline *line = fetch_line(p.y);
+static int level = 0;
+static char scheme = 0;
+  if (!forward) {
+    level = 0;
+    scheme = 0;
+  }
+  //printf("sel_ %d: forward %d level %d\n", p.x, forward, level);
 
   for (;;) {
     wchar c = get_char(line, p.x);
+
+    // scheme detection state machine
+    if (!forward) {
+      // http://abc.xy
+      //0ssss://
+      if (isalnum(c)) {
+        if (scheme == ':')
+          scheme = 's';
+        else if (scheme != 's')
+          scheme = 0;
+      }
+      else if (c == ':') {
+        if (scheme == '/')
+          scheme = ':';
+        else
+          scheme = 0;
+      }
+      else if (c == '/') {
+        scheme = '/';
+      }
+      else if (scheme)
+        break;
+      else
+        scheme = 0;
+    }
+
     if (term.mouse_state != MS_OPENING && *cfg.word_chars_excl)
       if (strchr(cfg.word_chars_excl, c))
         break;
@@ -48,16 +81,31 @@ sel_spread_word(pos p, bool forward)
       if (!forward)
         ret_p = p;
     }
-    else if (!term.mouse_state && strchr("()[]{}", c)) {
-      // support URLs with parentheses (#1196)
-      // should we also consider "'*<>^`| ?
+    // support URLs with parentheses (#1196)
+    // distinguish opening and closing parentheses to match proper nesting
+    else if (!term.mouse_state && strchr("([{", c)) {
+      level ++;
+      //printf("%d: %c forward %d level %d\n", p.x, c, forward, level);
       if (forward)
         ret_p = p;
     }
+    else if (!term.mouse_state && strchr(")]}", c)) {
+      level --;
+      //printf("%d: %c forward %d level %d\n", p.x, c, forward, level);
+      if (forward && level < 0)
+        break;
+      if (forward)
+        ret_p = p;
+    }
+    // should we also consider *^`| as part of a URL?
+    // should we strip ?!.,;: at the end?
+    // what about #$%&*\^`|~ at the end?
     else if (c == ' ' && p.x > 0 && get_char(line, p.x - 1) == '\\')
       ret_p = p;
-    else if (!(strchr("&,;?!", c) || c == (forward ? '=' : ':')))
+    else if (!(strchr("&,;?!:", c) || c == (forward ? '=' : ':'))) {
+      //printf("%d: %c forward %d level %d BREAK\n", p.x, c, forward, level);
       break;
+    }
 
     if (forward) {
       p.x++;
@@ -83,6 +131,7 @@ sel_spread_word(pos p, bool forward)
     }
   }
 
+  //printf("%d: return\n", ret_p.x);
   release_line(line);
   return ret_p;
 }
@@ -158,8 +207,10 @@ sel_spread(void)
 static bool
 hover_spread_empty(void)
 {
+  //printf("hover_spread_empty\n");
   term.hover_start = sel_spread_word(term.hover_start, false);
   term.hover_end = sel_spread_word(term.hover_end, true);
+  //printf("hover_spread_empty %d..%d\n", term.hover_start.x, term.hover_end.x);
   bool eq = term.hover_start.y == term.hover_end.y && term.hover_start.x == term.hover_end.x;
   incpos(term.hover_end);
   return eq;
@@ -596,12 +647,98 @@ term_mouse_release(mouse_button b, mod_keys mods, pos p)
   compose_clear();
 
   int state = term.mouse_state;
+  //printf("term_mouse_release state %d button %d\n", state, b);
+
+  // "Clicks place cursor" implementation.
+  void place_cursor(int mode)
+  {
+    pos dest;
+    if (mode == 2002)
+      dest = get_selpoint(box_pos(p));
+    else
+      dest = term.selected ? term.sel_end : get_selpoint(box_pos(p));
+    //printf("place_cursor p %d x %d sel %d..%d\n", p.x, term.curs.x, term.sel_start.x, term.sel_end.x);
+
+    static bool moved_previously = false;
+    static pos last_dest;
+
+    pos orig;
+    if (mode == 2003)
+      orig = term.sel_start;
+    else
+    if (state == MS_SEL_CHAR)
+      orig = (pos){.y = term.curs.y, .x = term.curs.x};
+    else if (moved_previously)
+      orig = last_dest;
+    else
+      return;
+
+    bool forward = posle(orig, dest);
+    pos end = forward ? dest : orig;
+    p = forward ? orig : dest;
+    //printf("place_cursor %d %d..%d\n", mode, p.x, end.x);
+
+    uint count = 0;
+    while (p.y != end.y) {
+      termline *line = fetch_line(p.y);
+      if (!(line->lattr & LATTR_WRAPPED)) {
+        release_line(line);
+        moved_previously = false;
+        return;
+      }
+      int cols = term.cols - ((line->lattr & LATTR_WRAPPED2) != 0);
+      for (int x = p.x; x < cols; x++) {
+        if (line->chars[x].chr != UCSWIDE)
+          count++;
+      }
+      p.y++;
+      p.x = 0;
+      release_line(line);
+    }
+    termline *line = fetch_line(p.y);
+    for (int x = p.x; x < end.x; x++) {
+      if (line->chars[x].chr != UCSWIDE)
+        count++;
+    }
+    release_line(line);
+
+    //printf(forward ? "keys +%d\n" : "keys -%d\n", count);
+    if (mode == 2003) {
+      //char erase = cfg.backspace_sends_bs ? CTRL('H') : CDEL;
+      struct termios attr;
+      tcgetattr(0, &attr);
+      char erase = attr.c_cc[VERASE];
+      send_keys(&erase, 1, count);
+    }
+    else {
+      char code[3] =
+        {'\e', term.app_cursor_keys ? 'O' : '[', forward ? 'C' : 'D'};
+      send_keys(code, 3, count);
+    }
+
+    moved_previously = true;
+    last_dest = dest;
+  }
 
   term.mouse_state = 0;
   switch (state) {
     when MS_COPYING: term_copy();
-    when MS_PASTING: win_paste();
     when MS_OPENING: mouse_open(p);
+    when MS_PASTING: {
+      // Finish selection.
+      if (term.selected && cfg.copy_on_select)
+        term_copy();
+
+      // Flush any output held back during selection.
+      term_flush();
+
+      // Readline mouse mode: place cursor to mouse position before pasting
+      if (term.readline_mouse_2)
+        place_cursor(2002);
+
+      // Now the pasting.
+      win_paste();
+    }
     when MS_SEL_CHAR or MS_SEL_WORD or MS_SEL_LINE: {
       // Open hovered link, accepting configurable modifiers
       if (state == MS_SEL_CHAR && !term.selected
@@ -622,58 +759,21 @@ term_mouse_release(mouse_button b, mod_keys mods, pos p)
       // Flush any output held back during selection.
       term_flush();
 
-      // "Clicks place cursor" implementation.
-      if (!cfg.clicks_place_cursor || term.on_alt_screen || term.app_cursor_keys)
+      // Guard "Clicks place cursor" implementation.
+      if (term.on_alt_screen || term.app_cursor_keys)
         return;
 
-      pos dest = term.selected ? term.sel_end : get_selpoint(box_pos(p));
-
-      static bool moved_previously;
-      static pos last_dest;
-
-      pos orig;
-      if (state == MS_SEL_CHAR)
-        orig = (pos){.y = term.curs.y, .x = term.curs.x};
-      else if (moved_previously)
-        orig = last_dest;
-      else
-        return;
-
-      bool forward = posle(orig, dest);
-      pos end = forward ? dest : orig;
-      p = forward ? orig : dest;
-
-      uint count = 0;
-      while (p.y != end.y) {
-        termline *line = fetch_line(p.y);
-        if (!(line->lattr & LATTR_WRAPPED)) {
-          release_line(line);
-          moved_previously = false;
-          return;
-        }
-        int cols = term.cols - ((line->lattr & LATTR_WRAPPED2) != 0);
-        for (int x = p.x; x < cols; x++) {
-          if (line->chars[x].chr != UCSWIDE)
-            count++;
-        }
-        p.y++;
-        p.x = 0;
-        release_line(line);
+      // Readline mouse mode: place cursor to mouse position
+      // Should cfg.clicks_place_cursor override DECSET mode?
+      bool extenda = (b == MBT_RIGHT && cfg.right_click_action == RC_EXTEND)
+                 || (b == MBT_MIDDLE && cfg.middle_click_action == MC_EXTEND);
+      if (term.readline_mouse_1 && b == MBT_LEFT)
+        place_cursor(2001);
+      else if (term.readline_mouse_3 && extenda && state == MS_SEL_WORD) {
+        place_cursor(2001);
+        place_cursor(2003);
+        term.selected = false;
       }
-      termline *line = fetch_line(p.y);
-      for (int x = p.x; x < end.x; x++) {
-        if (line->chars[x].chr != UCSWIDE)
-          count++;
-      }
-      release_line(line);
-
-      char code[3] =
-        {'\e', term.app_cursor_keys ? 'O' : '[', forward ? 'C' : 'D'};
-
-      send_keys(code, 3, count);
-
-      moved_previously = true;
-      last_dest = dest;
     }
     otherwise:
       if (check_app_mouse(&mods)) {

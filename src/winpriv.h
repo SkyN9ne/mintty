@@ -67,6 +67,7 @@ extern bool title_settable;
 extern bool support_wsl;
 extern wchar * wslname;
 extern wstring wsl_basepath;
+extern bool report_config;
 extern bool report_child_pid;
 extern bool report_child_tty;
 
@@ -149,6 +150,8 @@ extern void win_init_drop_target(void);
 extern wstring wslicon(wchar * params);
 
 extern char * foreground_cwd(void);
+
+extern void toggle_status_line(void);
 
 extern void win_switch(bool back, bool alternate);
 extern int sync_level(void);

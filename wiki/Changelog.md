@@ -1,9 +1,20 @@
 Terminal features
   * Tweak response code to XTQALLOWED OSC 60 and XTQDISALLOWED OSC 61 (xterm 378).
+  * Readline mouse modes (DECSET 2001 / 2002 / 2003, xterm 379).
   * Hover and open URL: support parentheses (#1196).
+  * Fix cursor artefacts in connection with ClicksPlaceCursor=yes.
+  * Fix mouse-paste while still selecting.
 
 Windows integration
   * Manage user-set HOME for calling Windows from WSL (mintty/wsltty#324, ~mintty/wsltty#76).
+  * Support OSC 7 directory cloning if cloning WSL window while in rootfs.
+
+Configuration
+  * Status line is configurable in Options menu, switchable from context menu.
+  * New user-definable function toggle-tabbar (#1201).
+  * Setting ClicksPlaceCursor presets all readline mouse modes.
+  * Dynamic support for flags emojis, deployment script (~mintty/wsltty#321).
+  * `MINTTY_DEBUG=C mintty ...` will list loaded config files (#1181).
 
 ### 3.6.3 (18 Dec 2022) ###
 
